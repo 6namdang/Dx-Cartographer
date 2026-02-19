@@ -17,7 +17,7 @@ export default async function handler(req, res) {
           'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
         },
         body: JSON.stringify({
-          model: 'arcee-ai/trinity-large-preview:free',
+          model: 'stepfun/step-3.5-flash:free',
           stream: true,
           messages: [
             { role: 'system', content: system },
