@@ -719,59 +719,64 @@ async function sendMessage() {
   conversationHistory.push({ role: 'user', content: text });
 
   try {
-    const res = await fetch('/api/chat', {
+    const res = await fetch('/api/chat', { // Make sure this matches your local route
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
         system: SYSTEM_PROMPT,
         messages: conversationHistory
       })
     });
 
     const data = await res.json();
+    
+    // Safety check for API errors
+    if (data.error) throw new Error(data.error);
+
     const raw = data.content?.[0]?.text || '{}';
 
     let parsed;
     try {
-      // Strip possible markdown fences
+      // Clean up potential markdown code blocks if the AI includes them
       const clean = raw.replace(/```json|```/g, '').trim();
       parsed = JSON.parse(clean);
     } catch {
+      // Fallback if the AI returns plain text instead of JSON
       parsed = { message: raw, nodes: [], edges: [] };
     }
 
     typingEl.remove();
-    appendMessage('assistant', parsed.message || 'Processing...');
+    appendMessage('assistant', parsed.message || 'Diagnostic cycle complete.');
 
     // Apply graph updates
-    for (const n of (parsed.nodes || [])) {
-      addNode(n.id, n.label, n.type, n.detail || '');
+    if (parsed.nodes) {
+      parsed.nodes.forEach(n => addNode(n.id, n.label, n.type, n.detail || ''));
     }
-    for (const e of (parsed.edges || [])) {
-      addEdge(e.from, e.to, e.label || '');
+    if (parsed.edges) {
+      parsed.edges.forEach(e => addEdge(e.from, e.to, e.label || ''));
     }
 
+    // Save the raw response for history so the AI remembers the "map" it built
     conversationHistory.push({ role: 'assistant', content: raw });
 
+    // Update status bar UI
     const counts = {
       confirmed: nodes.filter(n => n.type === 'confirmed' || n.type === 'symptom').length,
       possible: nodes.filter(n => n.type === 'possible').length,
       ruled_out: nodes.filter(n => n.type === 'ruled_out').length,
-      diagnosis: nodes.filter(n => n.type === 'diagnosis').length,
     };
     document.getElementById('statusBar').textContent =
-      `// ${nodes.length} nodes · ${counts.confirmed} confirmed · ${counts.possible} possible · ${counts.ruled_out} ruled out${counts.diagnosis ? ' · ' + counts.diagnosis + ' Dx' : ''}`;
+      `// ${nodes.length} nodes · ${counts.confirmed} confirmed · ${counts.possible} possible · ${counts.ruled_out} ruled out`;
 
   } catch (err) {
     typingEl.remove();
-    appendMessage('assistant', `Error: ${err.message}`);
-    document.getElementById('statusBar').textContent = '// error';
+    appendMessage('assistant', `System Error: ${err.message}`);
+    document.getElementById('statusBar').textContent = '// protocol interrupted';
   }
 
   btn.disabled = false;
 }
+
 
 function appendMessage(role, text) {
   const container = document.getElementById('chatMessages');
