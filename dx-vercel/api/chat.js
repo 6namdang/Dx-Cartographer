@@ -17,7 +17,7 @@ export default async function handler(req, res) {
           'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
         },
         body: JSON.stringify({
-          model: 'stepfun/step-3.5-flash:free',
+          model: 'z-ai/glm-4.5-air:free',
           stream: true,
           messages: [
             { role: 'system', content: system },
