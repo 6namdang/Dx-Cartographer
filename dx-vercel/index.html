@@ -713,70 +713,85 @@ async function sendMessage() {
   input.value = '';
   btn.disabled = true;
 
-  const typingEl = showTyping();
   document.getElementById('statusBar').textContent = '// analyzing...';
-
   conversationHistory.push({ role: 'user', content: text });
 
+  // Create assistant message box upfront
+  const container = document.getElementById('chatMessages');
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'msg assistant';
+  msgDiv.innerHTML = `<div class="msg-label">// Dx AI</div><div class="msg-body" id="streamBox"></div>`;
+  container.appendChild(msgDiv);
+  container.scrollTop = container.scrollHeight;
+  const streamBox = document.getElementById('streamBox');
+
+  let fullText = '';
+
   try {
-    const res = await fetch('/api/chat', { // Make sure this matches your local route
+    const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system: SYSTEM_PROMPT,
-        messages: conversationHistory
-      })
+      body: JSON.stringify({ system: SYSTEM_PROMPT, messages: conversationHistory })
     });
 
-    const data = await res.json();
-    
-    // Safety check for API errors
-    if (data.error) throw new Error(data.error);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
 
-    const raw = data.content?.[0]?.text || '{}';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-    let parsed;
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n').filter(l => l.startsWith('data:'));
+
+      for (const line of lines) {
+        const data = line.replace('data: ', '').trim();
+        if (data === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) throw new Error(parsed.error);
+          if (parsed.token) {
+            fullText += parsed.token;
+            streamBox.textContent = fullText;
+            container.scrollTop = container.scrollHeight;
+          }
+        } catch (e) {
+          if (e.message !== 'Unexpected end of JSON input') throw e;
+        }
+      }
+    }
+
+    // Parse the completed JSON response
+    conversationHistory.push({ role: 'assistant', content: fullText });
+
     try {
-      // Clean up potential markdown code blocks if the AI includes them
-      const clean = raw.replace(/```json|```/g, '').trim();
-      parsed = JSON.parse(clean);
+      const clean = fullText.replace(/```json|```/g, '').trim();
+      const parsed = JSON.parse(clean);
+
+      // Update stream box with just the message
+      streamBox.textContent = parsed.message || fullText;
+
+      if (parsed.nodes) parsed.nodes.forEach(n => addNode(n.id, n.label, n.type, n.detail || ''));
+      if (parsed.edges) parsed.edges.forEach(e => addEdge(e.from, e.to, e.label || ''));
+
+      const counts = {
+        confirmed: nodes.filter(n => n.type === 'confirmed' || n.type === 'symptom').length,
+        possible: nodes.filter(n => n.type === 'possible').length,
+        ruled_out: nodes.filter(n => n.type === 'ruled_out').length,
+      };
+      document.getElementById('statusBar').textContent =
+        `// ${nodes.length} nodes · ${counts.confirmed} confirmed · ${counts.possible} possible · ${counts.ruled_out} ruled out`;
     } catch {
-      // Fallback if the AI returns plain text instead of JSON
-      parsed = { message: raw, nodes: [], edges: [] };
+      streamBox.textContent = fullText;
     }
-
-    typingEl.remove();
-    appendMessage('assistant', parsed.message || 'Diagnostic cycle complete.');
-
-    // Apply graph updates
-    if (parsed.nodes) {
-      parsed.nodes.forEach(n => addNode(n.id, n.label, n.type, n.detail || ''));
-    }
-    if (parsed.edges) {
-      parsed.edges.forEach(e => addEdge(e.from, e.to, e.label || ''));
-    }
-
-    // Save the raw response for history so the AI remembers the "map" it built
-    conversationHistory.push({ role: 'assistant', content: raw });
-
-    // Update status bar UI
-    const counts = {
-      confirmed: nodes.filter(n => n.type === 'confirmed' || n.type === 'symptom').length,
-      possible: nodes.filter(n => n.type === 'possible').length,
-      ruled_out: nodes.filter(n => n.type === 'ruled_out').length,
-    };
-    document.getElementById('statusBar').textContent =
-      `// ${nodes.length} nodes · ${counts.confirmed} confirmed · ${counts.possible} possible · ${counts.ruled_out} ruled out`;
 
   } catch (err) {
-    typingEl.remove();
-    appendMessage('assistant', `System Error: ${err.message}`);
+    streamBox.textContent = `System Error: ${err.message}`;
     document.getElementById('statusBar').textContent = '// protocol interrupted';
   }
 
   btn.disabled = false;
 }
-
 
 function appendMessage(role, text) {
   const container = document.getElementById('chatMessages');

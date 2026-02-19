@@ -3,6 +3,10 @@ export default async function handler(req, res) {
 
   const { messages, system } = req.body;
 
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
   try {
     const upstream = await fetch(
       'https://openrouter.ai/api/v1/chat/completions',
@@ -13,8 +17,8 @@ export default async function handler(req, res) {
           'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
         },
         body: JSON.stringify({
-          model: 'deepseek/deepseek-r1-0528:free',
-          max_tokens: 2000,
+          model: 'arcee-ai/trinity-large-preview:free',
+          stream: true,
           messages: [
             { role: 'system', content: system },
             ...messages
@@ -23,19 +27,39 @@ export default async function handler(req, res) {
       }
     );
 
-    const data = await upstream.json();
-
     if (!upstream.ok) {
-      return res.status(upstream.status).json({ error: JSON.stringify(data) });
+      const err = await upstream.json();
+      res.write(`data: ${JSON.stringify({ error: JSON.stringify(err) })}\n\n`);
+      return res.end();
     }
 
-    const text = data.choices?.[0]?.message?.content || '{}';
-    res.status(200).json({ content: [{ text }] });
+    const reader = upstream.body.getReader();
+    const decoder = new TextDecoder();
 
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n').filter(l => l.startsWith('data:'));
+
+      for (const line of lines) {
+        const data = line.replace('data: ', '').trim();
+        if (data === '[DONE]') {
+          res.write('data: [DONE]\n\n');
+          continue;
+        }
+        try {
+          const parsed = JSON.parse(data);
+          const token = parsed.choices?.[0]?.delta?.content || '';
+          if (token) res.write(`data: ${JSON.stringify({ token })}\n\n`);
+        } catch {}
+      }
+    }
+
+    res.end();
   } catch (err) {
-    console.error('Handler error:', err);
-    res.status(500).json({ error: err.message });
+    res.write(`data: ${JSON.stringify({ error: err.message })}\n\n`);
+    res.end();
   }
 }
-
-
