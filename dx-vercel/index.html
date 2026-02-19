@@ -162,16 +162,6 @@
   .thinking-dots span:nth-child(3) { animation-delay: 0.4s; }
   @keyframes blink { 0%,80%,100% { opacity: 0.2; } 40% { opacity: 1; } }
 
-  /* ── GRAPH PARSING FLASH ── */
-  .graph-flash {
-    font-size: 10px;
-    color: var(--accent);
-    letter-spacing: 1px;
-    opacity: 0;
-    animation: flashIn 0.4s ease forwards;
-  }
-  @keyframes flashIn { to { opacity: 1; } }
-
   .chat-input-area {
     border-top: 1px solid var(--border);
     padding: 12px;
@@ -225,16 +215,6 @@
     display: block;
     width: 100%;
     height: 100%;
-  }
-
-  .graph-hint {
-    position: absolute;
-    bottom: 16px;
-    right: 16px;
-    font-size: 10px;
-    color: var(--muted);
-    letter-spacing: 0.5px;
-    pointer-events: none;
   }
 
   .node-tooltip {
@@ -327,25 +307,19 @@
 </header>
 
 <div class="main">
-  <!-- CHAT -->
   <div class="chat-panel">
     <div class="chat-messages" id="chatMessages">
       <div class="msg assistant">
         <div class="msg-label">// System</div>
-        <div class="msg-body">Dr. CARTO online. Senior attending + diagnostic cartographer.
-
-Give me your patient. Chief complaint, vitals, history — anything. I'll map the differential and tell you what I'd be thinking if I were standing at that bedside.
-
-Don't filter. Give me the raw picture.</div>
+        <div class="msg-body">Dr. CARTO online. Senior attending + diagnostic cartographer. Provide findings to begin mapping.</div>
       </div>
     </div>
     <div class="chat-input-area">
-      <textarea id="inputBox" placeholder="Enter symptoms, findings, or ask what to investigate next..." onkeydown="handleKey(event)"></textarea>
+      <textarea id="inputBox" placeholder="Enter symptoms, findings..." onkeydown="handleKey(event)"></textarea>
       <button id="sendBtn" onclick="sendMessage()">SEND</button>
     </div>
   </div>
 
-  <!-- GRAPH -->
   <div class="graph-panel">
     <canvas id="graphCanvas"></canvas>
     <div class="status-bar" id="statusBar">// awaiting data</div>
@@ -353,11 +327,10 @@ Don't filter. Give me the raw picture.</div>
       <button class="zoom-btn" onclick="zoomBy(1.2)" title="Zoom In">+</button>
       <span class="zoom-level" id="zoomLevel">100%</span>
       <button class="zoom-btn" onclick="zoomBy(0.8)" title="Zoom Out">−</button>
-      <button class="zoom-btn" onclick="fitGraph()" title="Fit to screen" style="font-size:10px;width:auto;padding:0 6px;">FIT</button>
+      <button class="zoom-btn" onclick="fitGraph()" title="Fit" style="font-size:10px;width:auto;padding:0 6px;">FIT</button>
       <button class="reset-btn" onclick="resetGraph()">RESET</button>
     </div>
     <div class="node-tooltip" id="tooltip"></div>
-    <div class="graph-hint">drag to pan · hover nodes for details</div>
   </div>
 </div>
 
@@ -394,13 +367,9 @@ function toWorld(sx, sy) {
   return { x: (sx - pan.x) / scale, y: (sy - pan.y) / scale };
 }
 
-function toScreen(wx, wy) {
-  return { x: wx * scale + pan.x, y: wy * scale + pan.y };
-}
-
 function addNode(id, label, type, detail = '') {
-  if (nodes.find(n => n.id === id)) {
-    const n = nodes.find(n => n.id === id);
+  let n = nodes.find(node => node.id === id);
+  if (n) {
     n.type = type;
     n.label = label;
     n.detail = detail;
@@ -408,12 +377,10 @@ function addNode(id, label, type, detail = '') {
   }
   const centerX = canvas.width / 2;
   const centerY = canvas.height / 2;
-  const angle = Math.random() * Math.PI * 2;
-  const radius = 80 + Math.random() * 160;
-  const n = {
+  n = {
     id, label, type, detail,
-    x: (centerX - pan.x) / scale + Math.cos(angle) * radius,
-    y: (centerY - pan.y) / scale + Math.sin(angle) * radius,
+    x: (centerX - pan.x) / scale + (Math.random() - 0.5) * 100,
+    y: (centerY - pan.y) / scale + (Math.random() - 0.5) * 100,
     vx: 0, vy: 0,
     r: type === 'diagnosis' ? 32 : 22
   };
@@ -433,6 +400,7 @@ function resetGraph() {
   edges = [];
   pan = { x: 0, y: 0 };
   scale = 1;
+  updateZoomDisplay();
 }
 
 function simulate() {
@@ -441,9 +409,7 @@ function simulate() {
   const damping = 0.85;
   const restLen = 140;
 
-  for (let i = 0; i < nodes.length; i++) {
-    nodes[i].vx = 0; nodes[i].vy = 0;
-  }
+  nodes.forEach(n => { n.vx = 0; n.vy = 0; });
 
   for (let i = 0; i < nodes.length; i++) {
     for (let j = i + 1; j < nodes.length; j++) {
@@ -451,32 +417,32 @@ function simulate() {
       const dy = nodes[j].y - nodes[i].y;
       const d = Math.sqrt(dx * dx + dy * dy) || 1;
       const f = repulsion / (d * d);
-      const fx = (dx / d) * f;
-      const fy = (dy / d) * f;
-      nodes[i].vx -= fx; nodes[i].vy -= fy;
-      nodes[j].vx += fx; nodes[j].vy += fy;
+      nodes[i].vx -= (dx / d) * f;
+      nodes[i].vy -= (dy / d) * f;
+      nodes[j].vx += (dx / d) * f;
+      nodes[j].vy += (dy / d) * f;
     }
   }
 
-  for (const e of edges) {
+  edges.forEach(e => {
     const a = nodes.find(n => n.id === e.from);
     const b = nodes.find(n => n.id === e.to);
-    if (!a || !b) continue;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const d = Math.sqrt(dx * dx + dy * dy) || 1;
-    const f = (d - restLen) * spring;
-    const fx = (dx / d) * f;
-    const fy = (dy / d) * f;
-    a.vx += fx; a.vy += fy;
-    b.vx -= fx; b.vy -= fy;
-  }
+    if (a && b) {
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const d = Math.sqrt(dx * dx + dy * dy) || 1;
+      const f = (d - restLen) * spring;
+      a.vx += (dx / d) * f; a.vy += (dy / d) * f;
+      b.vx -= (dx / d) * f; b.vy -= (dy / d) * f;
+    }
+  });
 
-  for (const n of nodes) {
-    if (n === dragging) continue;
-    n.x += n.vx * damping;
-    n.y += n.vy * damping;
-  }
+  nodes.forEach(n => {
+    if (n !== dragging) {
+      n.x += n.vx * damping;
+      n.y += n.vy * damping;
+    }
+  });
 }
 
 function drawGraph() {
@@ -485,224 +451,68 @@ function drawGraph() {
   ctx.translate(pan.x, pan.y);
   ctx.scale(scale, scale);
 
-  for (const e of edges) {
+  edges.forEach(e => {
     const a = nodes.find(n => n.id === e.from);
     const b = nodes.find(n => n.id === e.to);
-    if (!a || !b) continue;
+    if (!a || !b) return;
     ctx.beginPath();
     ctx.moveTo(a.x, a.y);
     ctx.lineTo(b.x, b.y);
     ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    ctx.lineWidth = 1;
     ctx.stroke();
+  });
 
-    if (e.label) {
-      const mx = (a.x + b.x) / 2;
-      const my = (a.y + b.y) / 2;
-      ctx.fillStyle = 'rgba(255,255,255,0.3)';
-      ctx.font = `9px JetBrains Mono`;
-      ctx.textAlign = 'center';
-      ctx.fillText(e.label, mx, my);
-    }
-  }
-
-  for (const n of nodes) {
+  nodes.forEach(n => {
     const color = NODE_COLORS[n.type] || '#ffffff';
-
-    const grd = ctx.createRadialGradient(n.x, n.y, 0, n.x, n.y, n.r * 2);
-    grd.addColorStop(0, color + '33');
-    grd.addColorStop(1, 'transparent');
-    ctx.beginPath();
-    ctx.arc(n.x, n.y, n.r * 2, 0, Math.PI * 2);
-    ctx.fillStyle = grd;
-    ctx.fill();
-
     ctx.beginPath();
     ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
     ctx.fillStyle = '#0a0c10';
     ctx.fill();
     ctx.strokeStyle = color;
-    ctx.lineWidth = n.type === 'diagnosis' ? 2.5 : 1.5;
+    ctx.lineWidth = n.type === 'diagnosis' ? 3 : 1.5;
     ctx.stroke();
 
-    if (n.type === 'ruled_out') {
-      ctx.save();
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
-      ctx.globalAlpha = 0.5;
-      const s = n.r * 0.5;
-      ctx.beginPath();
-      ctx.moveTo(n.x - s, n.y - s);
-      ctx.lineTo(n.x + s, n.y + s);
-      ctx.moveTo(n.x + s, n.y - s);
-      ctx.lineTo(n.x - s, n.y + s);
-      ctx.stroke();
-      ctx.restore();
-    }
-
     ctx.fillStyle = color;
-    ctx.font = `bold ${n.r > 25 ? 11 : 9}px JetBrains Mono`;
+    ctx.font = `bold 10px JetBrains Mono`;
     ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    const words = n.label.split(' ');
-    if (words.length <= 2) {
-      ctx.fillText(n.label, n.x, n.y);
-    } else {
-      const line1 = words.slice(0, Math.ceil(words.length / 2)).join(' ');
-      const line2 = words.slice(Math.ceil(words.length / 2)).join(' ');
-      ctx.fillText(line1, n.x, n.y - 6);
-      ctx.fillText(line2, n.x, n.y + 6);
-    }
-  }
-
+    ctx.fillText(n.label, n.x, n.y + 4);
+  });
   ctx.restore();
 }
 
-function loop() {
-  simulate();
-  drawGraph();
-  requestAnimationFrame(loop);
-}
-
+function loop() { simulate(); drawGraph(); requestAnimationFrame(loop); }
 canvas.addEventListener('mousedown', e => {
   const w = toWorld(e.offsetX, e.offsetY);
-  const hit = nodes.find(n => {
-    const dx = n.x - w.x; const dy = n.y - w.y;
-    return Math.sqrt(dx * dx + dy * dy) < n.r;
-  });
-  if (hit) {
-    dragging = hit;
-    dragOffset = { x: hit.x - w.x, y: hit.y - w.y };
-  } else {
-    isPanning = true;
-    panStart = { x: e.clientX - pan.x, y: e.clientY - pan.y };
-  }
+  const hit = nodes.find(n => Math.hypot(n.x - w.x, n.y - w.y) < n.r);
+  if (hit) { dragging = hit; dragOffset = { x: hit.x - w.x, y: hit.y - w.y }; }
+  else { isPanning = true; panStart = { x: e.clientX - pan.x, y: e.clientY - pan.y }; }
 });
-
 canvas.addEventListener('mousemove', e => {
   if (dragging) {
     const w = toWorld(e.offsetX, e.offsetY);
-    dragging.x = w.x + dragOffset.x;
-    dragging.y = w.y + dragOffset.y;
+    dragging.x = w.x + dragOffset.x; dragging.y = w.y + dragOffset.y;
   } else if (isPanning) {
-    pan.x = e.clientX - panStart.x;
-    pan.y = e.clientY - panStart.y;
-  }
-
-  const w = toWorld(e.offsetX, e.offsetY);
-  const hit = nodes.find(n => {
-    const dx = n.x - w.x; const dy = n.y - w.y;
-    return Math.sqrt(dx * dx + dy * dy) < n.r;
-  });
-  const tt = document.getElementById('tooltip');
-  if (hit && hit.detail) {
-    tt.style.display = 'block';
-    tt.style.left = (e.offsetX + 12) + 'px';
-    tt.style.top = (e.offsetY + 12) + 'px';
-    tt.innerHTML = `<strong style="color:${NODE_COLORS[hit.type]}">${hit.label}</strong><br><span style="color:#4a5568;font-size:9px">${hit.type.toUpperCase().replace('_',' ')}</span><br><br>${hit.detail}`;
-  } else {
-    tt.style.display = 'none';
+    pan.x = e.clientX - panStart.x; pan.y = e.clientY - panStart.y;
   }
 });
+window.addEventListener('mouseup', () => { dragging = null; isPanning = false; });
+function zoomBy(f) { scale *= f; updateZoomDisplay(); }
+function updateZoomDisplay() { document.getElementById('zoomLevel').textContent = Math.round(scale * 100) + '%'; }
+function fitGraph() { pan = {x:0, y:0}; scale = 1; updateZoomDisplay(); }
 
-canvas.addEventListener('mouseup', () => { dragging = null; isPanning = false; });
-
-canvas.addEventListener('wheel', e => {
-  e.preventDefault();
-  const factor = e.deltaY < 0 ? 1.1 : 0.9;
-  const cx = e.offsetX; const cy = e.offsetY;
-  pan.x = cx - (cx - pan.x) * factor;
-  pan.y = cy - (cy - pan.y) * factor;
-  scale *= factor;
-  scale = Math.max(0.2, Math.min(4, scale));
-  updateZoomDisplay();
-}, { passive: false });
-
-function zoomBy(factor) {
-  const cx = canvas.width / 2;
-  const cy = canvas.height / 2;
-  pan.x = cx - (cx - pan.x) * factor;
-  pan.y = cy - (cy - pan.y) * factor;
-  scale *= factor;
-  scale = Math.max(0.2, Math.min(4, scale));
-  updateZoomDisplay();
-}
-
-function fitGraph() {
-  if (nodes.length === 0) return;
-  const padding = 60;
-  const minX = Math.min(...nodes.map(n => n.x - n.r));
-  const maxX = Math.max(...nodes.map(n => n.x + n.r));
-  const minY = Math.min(...nodes.map(n => n.y - n.r));
-  const maxY = Math.max(...nodes.map(n => n.y + n.r));
-  const gw = maxX - minX || 1;
-  const gh = maxY - minY || 1;
-  const newScale = Math.min(
-    (canvas.width - padding * 2) / gw,
-    (canvas.height - padding * 2) / gh,
-    2
-  );
-  scale = newScale;
-  pan.x = canvas.width / 2 - ((minX + maxX) / 2) * scale;
-  pan.y = canvas.height / 2 - ((minY + maxY) / 2) * scale;
-  updateZoomDisplay();
-}
-
-function updateZoomDisplay() {
-  const el = document.getElementById('zoomLevel');
-  if (el) el.textContent = Math.round(scale * 100) + '%';
-}
-
-window.addEventListener('resize', resizeCanvas);
 resizeCanvas();
 loop();
 
 // ─── CHAT ENGINE ────────────────────────────────────────────────────────────
 let conversationHistory = [];
 
-const SYSTEM_PROMPT = `You are a senior doctor with 30+ years of clinical experience across internal medicine, emergency medicine, and diagnostics. You are also a diagnostic cartographer: you build and maintain a living map of the patient's diagnostic space in real time.
-
-Your dual role:
-1. As a SUPERVISOR: You co-supervise the treating doctor. You speak directly, clinically, and as concise as much as possible, move fast. You flag when something is being missed, when a diagnosis is premature, or when a red flag is being overlooked.
-2. As a CARTOGRAPHER: You maintain a structured node map of the diagnostic landscape — confirming facts, ruling out differentials, and surfacing what still needs to be explored.
-
-ALWAYS respond with valid JSON in this exact format (no markdown, no extra text):
+const SYSTEM_PROMPT = `You are a senior diagnostic cartographer. ALWAYS respond in valid JSON:
 {
-  "message": "Your response as a senior attending. Be direct, clinically sharp, and supervisory. Call out red flags. Suggest what you'd be worried about if you were at the bedside. Max 4-5 sentences — tight and actionable.",
-  "nodes": [
-    {
-      "id": "unique_snake_case_id",
-      "label": "Short Label",
-      "type": "confirmed|ruled_out|ask|possible|diagnosis|symptom",
-      "detail": "Clinical reasoning: why this node exists, what evidence supports it, what to watch for."
-    }
-  ],
-  "edges": [
-    { "from": "node_id_a", "to": "node_id_b", "label": "optional relationship" }
-  ]
+  "message": "Clinical feedback (max 4 sentences).",
+  "nodes": [{"id": "id", "label": "Label", "type": "symptom|confirmed|ruled_out|possible|diagnosis|ask", "detail": "reasoning"}],
+  "edges": [{"from": "id1", "to": "id2", "label": "rel"}]
 }
-
-Node types:
-- "symptom": A confirmed sign or symptom reported or observed
-- "confirmed": A confirmed fact — lab value, imaging result, history item
-- "ruled_out": A differential definitively excluded — explain why in detail
-- "possible": An active differential still in play
-- "diagnosis": Your leading or confirmed diagnosis
-- "ask": A specific question or investigation the doctor must pursue next
-
-Rules:
-- Reuse node IDs to UPDATE nodes as new info changes their status
-- Keep labels SHORT (1-4 words max), put reasoning in detail
-- Build the map incrementally — never reset, always expand
-- Be aggressive about ruling out when evidence is sufficient
-- Always surface 2-3 "ask" nodes — what's still missing that could change everything
-- Connect pathophysiologically related nodes with meaningful edges
-- If something the doctor says is clinically unsafe or premature, say so in the message field
-- Prioritize life-threatening diagnoses first — don't bury the lede
-
-You are the safety net. Be the attending you'd want standing behind you.`;
-
+Output raw JSON only.`;
 
 async function sendMessage() {
   const input = document.getElementById('inputBox');
@@ -713,24 +523,21 @@ async function sendMessage() {
   appendMessage('user', text);
   input.value = '';
   btn.disabled = true;
-  document.getElementById('statusBar').textContent = '// analyzing...';
 
-  conversationHistory.push({ role: 'user', content: text });
-
-  // ── Create the assistant bubble with a THINKING state ──
   const container = document.getElementById('chatMessages');
   const msgDiv = document.createElement('div');
   msgDiv.className = 'msg assistant';
-  msgDiv.innerHTML = `
-    <div class="msg-label">// Dr. CARTO</div>
-    <div class="msg-body thinking" id="streamBox">
-      <span style="color:var(--muted)">Mapping differential</span>
-      <span class="thinking-dots"><span></span><span></span><span></span></span>
-    </div>`;
+  // Use a unique reference for the inner body
+  const streamBody = document.createElement('div');
+  streamBody.className = 'msg-body thinking';
+  streamBody.innerHTML = `<span>Mapping differential</span><span class="thinking-dots"><span></span><span></span><span></span></span>`;
+  
+  msgDiv.innerHTML = `<div class="msg-label">// Dr. CARTO</div>`;
+  msgDiv.appendChild(streamBody);
   container.appendChild(msgDiv);
   container.scrollTop = container.scrollHeight;
 
-  const streamBox = document.getElementById('streamBox');
+  conversationHistory.push({ role: 'user', content: text });
   let fullText = '';
 
   try {
@@ -740,95 +547,57 @@ async function sendMessage() {
       body: JSON.stringify({ system: SYSTEM_PROMPT, messages: conversationHistory })
     });
 
-    if (!res.ok) {
-      const err = await res.json();
-      throw new Error(err.error || 'API error');
-    }
-
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
 
-    // ── Buffer the stream silently — user sees thinking dots ──
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-
       const chunk = decoder.decode(value);
       const lines = chunk.split('\n').filter(l => l.startsWith('data:'));
-
       for (const line of lines) {
         const data = line.replace('data: ', '').trim();
         if (data === '[DONE]') continue;
         try {
           const parsed = JSON.parse(data);
-          if (parsed.error) throw new Error(parsed.error);
           if (parsed.token) fullText += parsed.token;
-        } catch (e) {
-          if (e.message !== 'Unexpected end of JSON input') throw e;
-        }
+        } catch {}
       }
     }
 
-    // ── Stream complete: parse JSON and render cleanly ──
-    conversationHistory.push({ role: 'assistant', content: fullText });
-
     const clean = fullText.replace(/^```json|```$/gm, '').trim();
-    const parsed = JSON.parse(clean); // throws if malformed — caught below
+    const parsed = JSON.parse(clean);
 
-    // Transition: remove thinking class, show message
-    streamBox.classList.remove('thinking');
-    streamBox.textContent = parsed.message || '(no message)';
+    // Update the correct DOM element reference
+    streamBody.classList.remove('thinking');
+    streamBody.textContent = parsed.message || '(update complete)';
 
-    // Update graph
-    if (parsed.nodes) parsed.nodes.forEach(n => addNode(n.id, n.label, n.type, n.detail || ''));
-    if (parsed.edges) parsed.edges.forEach(e => addEdge(e.from, e.to, e.label || ''));
+    if (parsed.nodes) parsed.nodes.forEach(n => addNode(n.id, n.label, n.type, n.detail));
+    if (parsed.edges) parsed.edges.forEach(e => addEdge(e.from, e.to, e.label));
 
-    // Update status bar
-    const counts = {
-      confirmed: nodes.filter(n => n.type === 'confirmed' || n.type === 'symptom').length,
-      possible: nodes.filter(n => n.type === 'possible').length,
-      ruled_out: nodes.filter(n => n.type === 'ruled_out').length,
-    };
-    document.getElementById('statusBar').textContent =
-      `// ${nodes.length} nodes · ${counts.confirmed} confirmed · ${counts.possible} possible · ${counts.ruled_out} ruled out`;
+    conversationHistory.push({ role: 'assistant', content: fullText });
+    document.getElementById('statusBar').textContent = `// ${nodes.length} nodes mapped`;
 
   } catch (err) {
-    // Show error cleanly — not as raw JSON
-    streamBox.classList.remove('thinking');
-    streamBox.style.color = 'var(--red)';
-
-    if (fullText && err instanceof SyntaxError) {
-      // Model returned non-JSON — show raw response as fallback
-      streamBox.textContent = fullText;
-      document.getElementById('statusBar').textContent = '// warn: response was not valid JSON — graph not updated';
-    } else {
-      streamBox.textContent = `Error: ${err.message}`;
-      document.getElementById('statusBar').textContent = '// protocol interrupted';
-    }
+    streamBody.classList.remove('thinking');
+    streamBody.style.color = 'var(--red)';
+    streamBody.textContent = fullText || `Error: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+    container.scrollTop = container.scrollHeight;
   }
-
-  btn.disabled = false;
-  container.scrollTop = container.scrollHeight;
 }
 
 function appendMessage(role, text) {
   const container = document.getElementById('chatMessages');
   const div = document.createElement('div');
   div.className = `msg ${role}`;
-  div.innerHTML = `
-    <div class="msg-label">${role === 'user' ? '// Doctor' : '// Dr. CARTO'}</div>
-    <div class="msg-body">${text}</div>
-  `;
+  div.innerHTML = `<div class="msg-label">// ${role.toUpperCase()}</div><div class="msg-body">${text}</div>`;
   container.appendChild(div);
   container.scrollTop = container.scrollHeight;
 }
 
-function handleKey(e) {
-  if (e.key === 'Enter' && !e.shiftKey) {
-    e.preventDefault();
-    sendMessage();
-  }
-}
+function handleKey(e) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); } }
 </script>
 </body>
 </html>
