@@ -21,17 +21,11 @@ export default async function handler(req, res) {
         })
       }
     );
-    if (!upstream.ok) {
-  const errText = JSON.stringify(data);
-  console.error('Gemini error:', errText);
-  return res.status(upstream.status).json({ error: errText });
-}
 
     const data = await upstream.json();
 
     if (!upstream.ok) {
-      console.error('Gemini error:', JSON.stringify(data));
-      return res.status(upstream.status).json({ error: data });
+      return res.status(upstream.status).json({ error: JSON.stringify(data) });
     }
 
     const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
