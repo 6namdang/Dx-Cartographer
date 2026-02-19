@@ -5,19 +5,20 @@ export default async function handler(req, res) {
 
   try {
     const upstream = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-lite:generateContent',
+      'https://openrouter.ai/api/v1/chat/completions',
       {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-goog-api-key': process.env.GEMINI_API_KEY
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY}`
         },
         body: JSON.stringify({
-          system_instruction: { parts: [{ text: system }] },
-          contents: messages.map(m => ({
-            role: m.role === 'assistant' ? 'model' : 'user',
-            parts: [{ text: m.content }]
-          }))
+          model: 'deepseek/deepseek-r1-0528:free',
+          max_tokens: 2000,
+          messages: [
+            { role: 'system', content: system },
+            ...messages
+          ]
         })
       }
     );
@@ -28,7 +29,7 @@ export default async function handler(req, res) {
       return res.status(upstream.status).json({ error: JSON.stringify(data) });
     }
 
-    const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+    const text = data.choices?.[0]?.message?.content || '{}';
     res.status(200).json({ content: [{ text }] });
 
   } catch (err) {
@@ -36,3 +37,6 @@ export default async function handler(req, res) {
     res.status(500).json({ error: err.message });
   }
 }
+
+
+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
