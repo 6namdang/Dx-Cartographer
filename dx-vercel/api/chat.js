@@ -21,6 +21,11 @@ export default async function handler(req, res) {
         })
       }
     );
+    if (!upstream.ok) {
+  const errText = JSON.stringify(data);
+  console.error('Gemini error:', errText);
+  return res.status(upstream.status).json({ error: errText });
+}
 
     const data = await upstream.json();
 
